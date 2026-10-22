@@ -1,0 +1,6 @@
+<resources>
+    <string name="recording_notification_channel">Captura de audio</string>
+    <string name="recording_notification_title">Captura de micrófono activa</string>
+    <string name="recording_notification_text">VozTranslate está capturando audio PCM.</string>
+    <string name="stop_recording">Detener</string>
+</resources>

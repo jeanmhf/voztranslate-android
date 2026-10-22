@@ -1,0 +1,20 @@
+# Gradle / Android build outputs
+.gradle/
+build/
+**/build/
+local.properties
+.idea/
+*.iml
+
+# Android Studio / emulator local state
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local model downloads and recordings (never commit user audio or model blobs)
+models/
+recordings/
+*.onnx
+*.tflite
+*.pcm
+*.m4a
