@@ -153,8 +153,8 @@ class RoomSessionRepository(
 
                     val deletableSessionIds = sessions.asSequence()
                         .filter { session ->
-                            val privateFile = resolvePrivateWave(session.audioPath)
-                            privateFile == null || privateFile.pathKey !in failedPaths
+                            val privatePathKey = privateWavePath(File(session.audioPath))?.pathKey
+                            privatePathKey == null || privatePathKey !in failedPaths
                         }
                         .map(RecordingSessionEntity::id)
                         .toList()
@@ -205,22 +205,23 @@ class RoomSessionRepository(
     private suspend fun recoverInProgressSessions() {
         val abandoned = dao.getInProgress()
         for (session in abandoned) {
-            val audioFile = File(session.audioPath)
-            val privatePath = isPrivateRecordingPath(session.toDomain())
-            var payloadPresence = if (privatePath) {
-                PrivatePcmWavWriter.inspectPcmPayload(audioFile)
+            val privateAudioFile = resolvePrivateWave(session.audioPath)?.file
+            var payloadPresence = if (privateAudioFile != null) {
+                PrivatePcmWavWriter.inspectPcmPayload(privateAudioFile)
             } else {
                 PcmPayloadPresence.ABSENT
             }
-            if (privatePath && payloadPresence != PcmPayloadPresence.ABSENT) {
+            if (privateAudioFile != null && payloadPresence != PcmPayloadPresence.ABSENT) {
                 // A false repair result is ambiguous: malformed headers and transient I/O both
                 // fail recovery. Preserve candidate bytes and only delete after confirming there
                 // is no PCM payload.
-                PrivatePcmWavWriter.recoverInterruptedFile(audioFile)
-                payloadPresence = PrivatePcmWavWriter.inspectPcmPayload(audioFile)
+                PrivatePcmWavWriter.recoverInterruptedFile(privateAudioFile)
+                payloadPresence = PrivatePcmWavWriter.inspectPcmPayload(privateAudioFile)
             }
-            val retainAudioCandidate = privatePath && payloadPresence != PcmPayloadPresence.ABSENT
-            if (privatePath && !retainAudioCandidate) runCatching { audioFile.delete() }
+            val retainAudioCandidate = privateAudioFile != null && payloadPresence != PcmPayloadPresence.ABSENT
+            if (privateAudioFile != null && !retainAudioCandidate) {
+                runCatching { Files.deleteIfExists(privateAudioFile.toPath()) }
+            }
             dao.finishIfInProgress(
                 sessionId = session.id,
                 endedAtMillis = System.currentTimeMillis(),
@@ -236,22 +237,15 @@ class RoomSessionRepository(
     /** Retry WAV repair for retained interrupted candidates on a later capture start. */
     private suspend fun retryInterruptedAudioRecovery() {
         for (session in dao.getInterrupted()) {
-            val domainSession = session.toDomain()
-            if (!isPrivateRecordingPath(domainSession)) continue
-            val audioFile = File(session.audioPath)
+            val audioFile = resolvePrivateWave(session.audioPath)?.file ?: continue
             if (PrivatePcmWavWriter.inspectPcmPayload(audioFile) != PcmPayloadPresence.ABSENT) {
                 PrivatePcmWavWriter.recoverInterruptedFile(audioFile)
             }
         }
     }
 
-    private fun isPrivateRecordingPath(session: RecordingSession): Boolean =
-        resolvePrivateWave(session.audioPath) != null
-
-    private fun resolvePrivateWave(path: String): PrivateWaveFile? = runCatching {
-        val file = File(path).toPath().toAbsolutePath().normalize().toFile()
-        privateWaveEntry(file)
-    }.getOrNull()
+    private fun resolvePrivateWave(path: String): PrivateWaveFile? =
+        privateWaveEntry(File(path))
 
     private fun canonicalRecordingsDirectory(): File {
         val rawDirectory = recordingsDirectory.absoluteFile
@@ -281,16 +275,15 @@ class RoomSessionRepository(
         privateWaveEntries().distinctBy(PrivateWaveFile::identity)
 
     private fun privateWaveEntry(file: File): PrivateWaveFile? {
-        val path = file.toPath().toAbsolutePath().normalize()
-        val directory = canonicalRecordingsDirectory().toPath()
-        if (path.parent != directory || !path.fileName.toString().endsWith(".wav", ignoreCase = true)) return null
+        val normalizedFile = privateWavePath(file) ?: return null
+        val path = normalizedFile.file.toPath()
         val attributes = try {
             Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         } catch (_: NoSuchFileException) {
             return null
         }
         if (!attributes.isRegularFile) return null
-        val pathKey = path.toString()
+        val pathKey = normalizedFile.pathKey
         val identity = attributes.fileKey()?.let { "file:$it" } ?: "path:$pathKey"
         return PrivateWaveFile(
             file = path.toFile(),
@@ -299,6 +292,26 @@ class RoomSessionRepository(
             sizeBytes = attributes.size(),
         )
     }
+
+    /** Resolve only the parent; keeping the leaf untouched lets NOFOLLOW_LINKS reject symlinks. */
+    private fun privateWavePath(file: File): PrivateWavePath? = runCatching {
+        val candidate = file.toPath().toAbsolutePath().normalize()
+        val fileName = candidate.fileName ?: return@runCatching null
+        if (!fileName.toString().endsWith(".wav", ignoreCase = true)) return@runCatching null
+
+        val directory = canonicalRecordingsDirectory().toPath()
+        val canonicalParent = candidate.parent?.toFile()?.canonicalFile?.toPath()
+            ?: return@runCatching null
+        if (canonicalParent != directory) return@runCatching null
+
+        val canonicalPath = directory.resolve(fileName).normalize()
+        PrivateWavePath(file = canonicalPath.toFile(), pathKey = canonicalPath.toString())
+    }.getOrNull()
+
+    private data class PrivateWavePath(
+        val file: File,
+        val pathKey: String,
+    )
 
     private data class PrivateWaveFile(
         val file: File,

@@ -17,7 +17,7 @@ Demostrar transcripción, traducción y separación de hablantes en un teléfono
 | Área | Elección |
 | --- | --- |
 | Aplicación | Kotlin, Jetpack Compose, ViewModel, Coroutines y Flow |
-| Dispositivo objetivo | Android 10 o superior, ARM64, al menos 6 GB de RAM |
+| Dispositivo objetivo | Android 10 o superior; ABI `arm64-v8a`, `armeabi-v7a` o `x86_64`; 6 GB de RAM recomendados |
 | Captura | AudioRecord; MediaProjection y AudioPlaybackCapture para reproducción permitida |
 | Transcripción | Moonshine Tiny Streaming para los tres idiomas |
 | Hablantes | cpp-annote con modelos pyannote community-1 |
@@ -32,6 +32,8 @@ M2M100 permite traducción directa entre los idiomas elegidos y tiene licencia M
 Usar las variantes **Streaming MIT** de Moonshine seleccionadas; no sustituirlas por variantes antiguas con restricciones no comerciales. cpp-annote tiene código MIT y los modelos community-1 requieren atribución CC BY 4.0. Registrar versiones, fuentes, licencias y hashes de todos los modelos antes de distribuirlos.
 
 Fijar versiones compatibles de dependencias y modelos. Resolver el runtime ONNX compartido mediante la integración nativa: evitar empaquetar versiones incompatibles de `libonnxruntime.so` para ASR y traducción.
+
+El APK de evaluación incluye las tres ABI de la tabla para ampliar la compatibilidad con la mayoría de los teléfonos Android 10 o superior. Se recomiendan 6 GB de RAM para procesar los modelos locales; admitir más arquitecturas no garantiza que estos se ejecuten con fluidez en todos los teléfonos.
 
 ## Arquitectura y comportamiento
 

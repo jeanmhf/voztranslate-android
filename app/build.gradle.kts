@@ -1,34 +1,60 @@
 import java.util.zip.ZipFile
 import java.security.MessageDigest
 
+fun sha256(file: File): String = file.inputStream().use { input ->
+    val digest = MessageDigest.getInstance("SHA-256")
+    val buffer = ByteArray(8 * 1024)
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        digest.update(buffer, 0, count)
+    }
+    digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
 }
 
-// The full ORT AAR is used as a source artifact only. Its ARM64 runtime replaces the minimal
-// ONNX-format-incompatible library embedded in Moonshine; do not package a second runtime.
+// The full ORT AAR is used as a source artifact only. Its runtime replaces the minimal
+// ONNX-format-incompatible library embedded in Moonshine for every supported ABI.
 val fullOrtRuntimeAar = configurations.create("fullOrtRuntimeAar") {
     isCanBeConsumed = false
     isCanBeResolved = true
 }
 val generatedOrtJniDirectory = layout.buildDirectory.dir("generated/ort-runtime-jni")
-val generatedOrtArm64Library = generatedOrtJniDirectory.map { it.file("arm64-v8a/libonnxruntime.so") }
-val fullOrtArm64Sha256 = "e40f09d07dc53726b8bfbf48a7907673b8f86718a057655a62790a39874a7302"
+val supportedAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+val fullOrtRuntimeSha256 = mapOf(
+    "arm64-v8a" to "e40f09d07dc53726b8bfbf48a7907673b8f86718a057655a62790a39874a7302",
+    "armeabi-v7a" to "57048b8d54896d16355ee367bfc129c5925468ae503b681b8d0cd49ceefa468e",
+    "x86_64" to "972c17c056eaae946a415d9efdd8018b729639974df075e495f0092441478fb7",
+)
+val generatedOrtRuntimeLibraries = supportedAbis.associateWith { abi ->
+    generatedOrtJniDirectory.map { it.file("$abi/libonnxruntime.so") }
+}
 val extractFullOrtRuntime = tasks.register("extractFullOrtRuntime") {
     inputs.files(fullOrtRuntimeAar)
-    outputs.file(generatedOrtArm64Library)
+    outputs.dir(generatedOrtJniDirectory)
     doLast {
         val archiveFile = fullOrtRuntimeAar.singleFile
-        val destination = generatedOrtArm64Library.get().asFile
-        val entryName = "jni/arm64-v8a/libonnxruntime.so"
         ZipFile(archiveFile).use { archive ->
-            val entry = archive.getEntry(entryName)
-                ?: error("ONNX Runtime 1.23.2 AAR does not contain $entryName")
-            destination.parentFile.mkdirs()
-            archive.getInputStream(entry).use { source ->
-                destination.outputStream().use { output -> source.copyTo(output) }
+            supportedAbis.forEach { abi ->
+                val entryName = "jni/$abi/libonnxruntime.so"
+                val entry = archive.getEntry(entryName)
+                    ?: error("ONNX Runtime 1.23.2 AAR does not contain $entryName")
+                val destination = generatedOrtRuntimeLibraries.getValue(abi).get().asFile
+                destination.parentFile.mkdirs()
+                archive.getInputStream(entry).use { source ->
+                    destination.outputStream().use { output -> source.copyTo(output) }
+                }
+                val expectedSha256 = fullOrtRuntimeSha256.getValue(abi)
+                val actualSha256 = sha256(destination)
+                check(actualSha256 == expectedSha256) {
+                    "The original ONNX Runtime 1.23.2 $abi library has unexpected SHA-256 " +
+                        "$actualSha256 (expected $expectedSha256)"
+                }
             }
         }
     }
@@ -38,19 +64,29 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders"
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("NativeLibs") }.configureEach {
     dependsOn(extractFullOrtRuntime)
     doLast {
-        fun sha256(file: File): String = MessageDigest.getInstance("SHA-256").digest(file.readBytes())
-            .joinToString("") { byte -> "%02x".format(byte) }
-
-        val sourceRuntime = generatedOrtArm64Library.get().asFile
         val variantName = name.removePrefix("merge").removeSuffix("NativeLibs").replaceFirstChar { it.lowercase() }
-        val mergedRuntime = layout.buildDirectory.get().asFile.resolve(
-            "intermediates/merged_native_libs/$variantName/$name/out/lib/arm64-v8a/libonnxruntime.so",
+        val mergedLibrariesDirectory = layout.buildDirectory.get().asFile.resolve(
+            "intermediates/merged_native_libs/$variantName/$name/out/lib",
         )
-        check(sourceRuntime.isFile && sha256(sourceRuntime) == fullOrtArm64Sha256) {
-            "The pinned full ONNX Runtime 1.23.2 ARM64 library is missing or has an unexpected SHA-256"
-        }
-        check(mergedRuntime.isFile && sha256(mergedRuntime) == fullOrtArm64Sha256) {
-            "Variant '$variantName' did not merge the pinned full ONNX Runtime 1.23.2 ARM64 library"
+        supportedAbis.forEach { abi ->
+            val expectedSha256 = fullOrtRuntimeSha256.getValue(abi)
+            val sourceRuntime = generatedOrtRuntimeLibraries.getValue(abi).get().asFile
+            val sourceSha256 = sha256(sourceRuntime)
+            check(sourceSha256 == expectedSha256) {
+                "The pinned full ONNX Runtime 1.23.2 $abi library is missing or has unexpected SHA-256 " +
+                    "$sourceSha256 (expected $expectedSha256)"
+            }
+
+            val mergedRuntime = mergedLibrariesDirectory.resolve("$abi/libonnxruntime.so")
+            mergedRuntime.parentFile.mkdirs()
+            // AGP needs a duplicate-file rule for the AAR collision, but its selected file is not
+            // trusted. Replace it with the library extracted above before packaging the variant.
+            sourceRuntime.copyTo(mergedRuntime, overwrite = true)
+            val mergedSha256 = sha256(mergedRuntime)
+            check(mergedSha256 == expectedSha256) {
+                "Variant '$variantName' did not package the pinned full ONNX Runtime 1.23.2 $abi " +
+                    "library (got $mergedSha256; expected $expectedSha256)"
+            }
         }
     }
 }
@@ -67,10 +103,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // The approved evaluation target is ARM64; the full ORT 1.23.2 runtime is shared by
-        // Moonshine and M2M100. It replaces Moonshine's reduced ORT-format-only runtime.
+        // Build JNI/SentencePiece and package full ONNX Runtime for each supported device ABI.
         ndk {
-            abiFilters += "arm64-v8a"
+            supportedAbis.forEach { abiFilters += it }
         }
 
         externalNativeBuild {
@@ -87,15 +122,13 @@ android {
 
     packaging {
         jniLibs {
-            // Both AARs contain this path. Keep the full upstream ORT package; every native
-            // merge task verifies the merged library hash against the pinned dependency artifact.
+            // Resolve the AAR collision so AGP can merge; the merge task then replaces this
+            // path with our extracted full runtime and verifies its hash for every supported ABI.
             pickFirsts += "**/libonnxruntime.so"
         }
     }
 
-    sourceSets.getByName("main").jniLibs.srcDir(
-        layout.buildDirectory.get().asFile.resolve("generated/ort-runtime-jni"),
-    )
+    sourceSets.getByName("main").jniLibs.srcDir(generatedOrtJniDirectory.get().asFile)
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

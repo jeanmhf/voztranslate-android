@@ -12,4 +12,7 @@ No edites archivos que otro agente esté modificando. Coordina los cambios de co
 No inicies subagentes. Comunica al coordinador avances, archivos modificados, decisiones y bloqueos.
 Al terminar entrega un resumen de cambios y de comprobaciones realmente ejecutadas, para que tester valide y reviewer revise.
 No declares completada la tarea hasta que el coordinador confirme las pruebas y revisión posteriores a las correcciones.
+No publiques automáticamente después de implementar ni por recibir resultados de pruebas/revisión aprobados. La implementación primero debe quedar técnicamente lista y el coordinador debe permitir que el usuario la revise en la app. Si el usuario pide correcciones, aplícalas y espera a que se repitan las validaciones y se le presente la nueva versión.
+Solo cuando el coordinador confirme que el usuario aprobó explícitamente publicar esa versión en GitHub, crea un commit con los cambios aprobados y haz push al remoto origin por la rama acordada, según AGENTS.md. Si aún no hay aprobación, conserva los cambios en local.
+No incluyas credenciales, local.properties, compilaciones, grabaciones ni modelos descargados; no fuerces pushes ni reescribas historial.
 """

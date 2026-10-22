@@ -6,23 +6,41 @@ import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.attribute.BasicFileAttributes
 
-/** Validates a new WAV destination without requiring the leaf file to exist yet. */
+/** Validates a new WAV destination without requiring its files/recordings path to exist yet. */
 internal object PrivateRecordingPathValidator {
     fun isValidDestination(recordingsDirectory: File, audioPath: String): Boolean = runCatching {
         val rawDirectory = recordingsDirectory.absoluteFile
         if (rawDirectory.name != RECORDINGS_DIRECTORY) return@runCatching false
 
-        val expectedParent = rawDirectory.parentFile?.canonicalFile ?: return@runCatching false
+        val rawParent = rawDirectory.parentFile ?: return@runCatching false
+        val parentAttributes = try {
+            Files.readAttributes(
+                rawParent.toPath(),
+                BasicFileAttributes::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            )
+        } catch (_: NoSuchFileException) {
+            // Android's private data path may contain a platform alias in an ancestor. Resolve
+            // that existing ancestor, then verify the actual directory without following its leaf.
+            val existingAncestor = rawParent.parentFile?.canonicalFile ?: return@runCatching false
+            val ancestorAttributes = Files.readAttributes(
+                existingAncestor.toPath(),
+                BasicFileAttributes::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            )
+            if (!ancestorAttributes.isDirectory || ancestorAttributes.isSymbolicLink) {
+                return@runCatching false
+            }
+            null
+        }
+        if (parentAttributes != null && (!parentAttributes.isDirectory || parentAttributes.isSymbolicLink)) {
+            return@runCatching false
+        }
+
+        val expectedParent = rawParent.canonicalFile
         val canonicalDirectory = recordingsDirectory.canonicalFile
         val expectedDirectory = File(expectedParent, RECORDINGS_DIRECTORY)
         if (canonicalDirectory != expectedDirectory) return@runCatching false
-
-        val parentAttributes = Files.readAttributes(
-            expectedParent.toPath(),
-            BasicFileAttributes::class.java,
-            LinkOption.NOFOLLOW_LINKS,
-        )
-        if (!parentAttributes.isDirectory || parentAttributes.isSymbolicLink) return@runCatching false
 
         // The recordings folder can be absent on the first capture; the writer creates it after
         // the Room session has been reserved. If present, it must itself be a real directory.
@@ -42,7 +60,9 @@ internal object PrivateRecordingPathValidator {
         }
 
         val destination = File(audioPath).toPath().toAbsolutePath().normalize()
-        if (destination.parent != canonicalDirectory.toPath() ||
+        val destinationParent = destination.parent?.toFile()?.canonicalFile?.toPath()
+            ?: return@runCatching false
+        if (destinationParent != canonicalDirectory.toPath() ||
             !destination.fileName.toString().endsWith(WAV_EXTENSION, ignoreCase = true)
         ) {
             return@runCatching false

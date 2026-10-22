@@ -29,6 +29,16 @@ Máximo tres subagentes abiertos simultáneamente, además del coordinador. Reut
 
 La comunicación puede ser directa entre subagentes; el coordinador es responsable de que se entregue y de reactivar a un agente inactivo. Si no existe mensajería directa, reenviar el informe a través del coordinador. No confundir enviar un mensaje con iniciar un nuevo turno del destinatario.
 
+## Visto bueno y publicación en GitHub
+
+- El usuario revisa la implementación en la aplicación cuando ya está lista; las pruebas y la revisión técnica ocurren antes de pedirle esa revisión.
+- La implementación está lista para el usuario cuando las comprobaciones aplicables pasan, no quedan hallazgos accionables del reviewer y existe una versión ejecutable para revisar. Para cambios de UI o flujo, preparar e instalar/abrir esa versión en el dispositivo de prueba disponible. Si eso no es posible, explicar el bloqueo y no presentar la implementación como lista para aprobación de publicación.
+- En ese momento, el coordinador muestra al usuario la app para que la pruebe y resume las comprobaciones técnicas y limitaciones. El usuario decide si aprueba publicarla en GitHub o si solicita correcciones.
+- Si el usuario pide cambios o no la aprueba, el coordinador reactiva al implementador para corregirla; luego se repiten las pruebas y la revisión afectadas y se vuelve a presentar la app al usuario. No hacer push.
+- No considerar el silencio, aprobaciones anteriores ni una autorización para implementar como aprobación de publicación. Solo un “sí” explícito del usuario para esa versión autoriza publicarla.
+- Después de ese “sí”, el coordinador reactiva al implementador. El implementador crea el commit de los cambios aprobados y los publica en el repositorio privado `jeanmhf/voztranslate-android`, usando `origin` y la rama acordada (por defecto, `main`).
+- Publicar solo los cambios aprobados de la tarea. No incluir credenciales, `local.properties`, compilaciones, grabaciones ni modelos descargados; respetar `.gitignore`. No forzar pushes ni reescribir historial. Si el push falla, conservar el trabajo local y reportar el bloqueo sin afirmar que se publicó.
+
 ## Propiedad de archivos y límites
 
 - Evitar escrituras simultáneas en los mismos archivos. Ejecutar las etapas secuencialmente cuando compartan archivos o dependan de cambios anteriores.
