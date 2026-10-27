@@ -1,3 +1,7 @@
+# Project defaults for the coordinator; explicit UI/session choices can override them.
+model = "gpt-6.1-sol"
+model_reasoning_effort = "max"
+
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 3
