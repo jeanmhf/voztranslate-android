@@ -36,7 +36,7 @@ La comunicación puede ser directa entre subagentes; el coordinador es responsab
 ## Publicación en GitHub
 
 - Cuando el QA aplicable termina y el reviewer no tiene hallazgos accionables ni quedan bloqueos en comprobaciones necesarias sobre el mismo diff final, el coordinador da un OK técnico explícito vinculado a esa revisión y al artefacto exacto cuando aplique.
-- Ese OK técnico autoriza al implementador a crear un commit con los cambios aprobados y hacer push a `origin/main` en el repositorio privado `jeanmhf/voztranslate-android`. No se espera otra aprobación del usuario.
+- Ese OK técnico autoriza al implementador a crear un commit con los cambios aprobados y hacer push a `origin/main` en el repositorio público `jeanmhf/voztranslate-android`. No se espera otra aprobación del usuario.
 - El implementador no publica antes de recibir ese OK. El coordinador puede pedir correcciones; cualquier edición después del QA/review requiere repetir las comprobaciones afectadas y confirmar el artefacto final antes del OK.
 - Para cambios de APK, validar el artefacto final y adjuntarlo como asset de Release cuando corresponda; registrar su hash/versión para evitar publicar un APK distinto del validado. Los cambios solo de configuración/documentación no requieren una nueva Release APK.
 - El OK técnico no significa que la publicación ya terminó. La tarea se cierra tras verificar que el commit aprobado está en `origin/main` y, para APKs, que la Release y el asset publicado corresponden al artefacto validado. Si falla el push o la subida, informar el bloqueo sin afirmar que se publicó.
